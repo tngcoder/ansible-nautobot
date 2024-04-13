@@ -1,0 +1,55 @@
+import os
+import sys
+
+from nautobot.core.settings import *  # noqa F401,F403
+from nautobot.core.settings_funcs import is_truthy, parse_redis_connection
+
+if DATABASES["default"]["ENGINE"].endswith("mysql"):
+    DATABASES["default"]["OPTIONS"] = {"charset": "utf8mb4"}
+
+SECRET_KEY = os.getenv("NAUTOBOT_SECRET_KEY", "8yloe60y)cg7=7(v=8d7y)aa%_g%zrqa1m)r@$ix@m+-03z+5d")
+
+ALLOWED_HOSTS = ['{{fqdn}}']
+
+CACHES = {
+    "default": {
+        "BACKEND": "django_redis.cache.RedisCache",
+        "LOCATION": "redis://localhost:6379/1",
+        "TIMEOUT": 300,
+        "OPTIONS": {
+            "CLIENT_CLASS": "django_redis.client.DefaultClient",
+            # Uncomment the following lines to configure TLS/SSL
+            # "CONNECTION_POOL_KWARGS": {
+            #     "ssl_cert_reqs": ssl.CERT_REQUIRED,
+            #     "ssl_ca_certs": "/opt/nautobot/redis/ca.crt",
+            #     "ssl_certfile": "/opt/nautobot/redis/tls.crt",
+            #     "ssl_keyfile": "/opt/nautobot/redis/tls.key",
+            # },
+        },
+    }
+}
+
+
+DATABASES = {
+    "default": {
+        "NAME": "{{nautobot_db_name}}",  # Database name
+        "USER": "{{nautobot_db_user}}",  # Database username
+        "PASSWORD": "{{nautobot_db_pass}}",  # Database password
+        "HOST": "{{nautobot_db_server}}",  # Database server
+        "PORT":  "",  # Database port (leave blank for default)
+        "CONN_MAX_AGE": int(os.getenv("NAUTOBOT_DB_TIMEOUT", "300")),  # Database timeout
+        "ENGINE": os.getenv(
+            "NAUTOBOT_DB_ENGINE",
+            "django_prometheus.db.backends.postgresql" if METRICS_ENABLED else "django.db.backends.postgresql",
+        ), 
+    }
+}
+INSTALLATION_METRICS_ENABLED = is_truthy(os.getenv("NAUTOBOT_INSTALLATION_METRICS_ENABLED", "False"))
+
+STATIC_ROOT = "{{nautobot_user_home}}/static"
+
+PLUGINS = [
+{% for item in plugins %}
+  "{{ item }}"{{ "," if not loop.last }}
+{% endfor %}
+]

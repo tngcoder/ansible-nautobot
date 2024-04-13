@@ -1,0 +1,105 @@
+- hosts: "letsencrypt"
+  tasks:
+
+  - name: "Delete directory in /etc/letsencrypt"
+    file:
+      path: "/etc/letsencrypt"
+      state: absent
+
+
+  - name: "Create required directories in /etc/letsencrypt"
+    file:
+      path: "/etc/letsencrypt/{{ item }}"
+      state: directory
+      owner: root
+      group: root
+      mode: u=rwx,g=x,o=x
+    with_items:
+    - account
+    - certs
+    - csrs
+    - keys
+
+  - name: "Generate a Let's Encrypt account key"
+    shell: "if [ ! -f {{ letsencrypt_account_key }} ]; then openssl genrsa 4096 | sudo tee {{ letsencrypt_account_key }}; fi"
+
+  - name: "Generate Let's Encrypt private key"
+    shell: "openssl genrsa 4096 | sudo tee /etc/letsencrypt/keys/{{ fqdn }}.key"
+
+  - name: "Generate Let's Encrypt CSR"
+    shell: "openssl req -new -sha256 -key /etc/letsencrypt/keys/{{ fqdn }}.key -subj \"/CN={{ fqdn }}\" -reqexts SAN -config <(cat /etc/ssl/openssl.cnf <(printf \"\n[SAN]\nsubjectAltName=DNS:{{ fqdn }}\")) | sudo tee /etc/letsencrypt/csrs/{{ fqdn }}.csr"
+    args:
+      executable: /bin/bash
+
+  - name: "Begin Let's Encrypt challenges"
+    acme_certificate:
+      acme_directory: "{{ acme_directory }}"
+      acme_version: "{{ acme_version }}"
+      account_key_src: "{{ letsencrypt_account_key }}"
+      account_email: "{{ acme_email }}"
+      terms_agreed: 1
+      challenge: "{{ acme_challenge_type }}"
+      csr: "{{ letsencrypt_csrs_dir }}/{{ fqdn }}.csr"
+      dest: "{{ letsencrypt_certs_dir }}/{{ domain_name }}.crt"
+      fullchain_dest: "{{ letsencrypt_certs_dir }}/fullchain_{{ fqdn }}.crt"
+      remaining_days: 90
+      force: true
+    register: acme_challenge_your_domain
+
+  - name: Create DNS record for dns-01 challenge (CloudFlare)
+    community.general.cloudflare_dns:
+      zone: "{{ domain_name }}"
+      record: "{{ acme_challenge_your_domain['challenge_data'][fqdn][acme_challenge_type]['record'] }}"
+      type: TXT
+      ttl: 60
+      value: "{{ acme_challenge_your_domain['challenge_data'][fqdn][acme_challenge_type]['resource_value'] }}"
+      account_email: "{{ cf_email }}"
+      account_api_key: "{{ cf_api_key }}"
+      api_token: "{{ cf_api_token }}"
+      state: present
+    register: record
+    when: dns_provider == "CF"
+
+  - name: Create DNS record for dns-01 challenge (Azure)
+    azure.azcollection.azure_rm_dnsrecordset:
+      auth_source: "credential_file"
+      resource_group: myResourceGroup
+      relative_name: "{{ acme_challenge_your_domain['challenge_data'][fqdn][acme_challenge_type]['record'] }}"
+      zone_name: "{{ domain_name }}"
+      record_type: TXT
+      records:
+        - entry: "{{ acme_challenge_your_domain['challenge_data'][fqdn][acme_challenge_type]['resource_value'] }}"
+    when: dns_provider == "AZ"
+
+  - name: Sleep for 120 seconds and continue with play
+    ansible.builtin.wait_for:
+      timeout: 120
+    delegate_to: localhost
+
+  - name: "Complete Let's Encrypt challenges"
+    acme_certificate:
+      acme_directory: "{{ acme_directory }}"
+      acme_version: "{{ acme_version }}"
+      account_key_src: "{{ letsencrypt_account_key }}"
+      account_email: "{{ acme_email }}"
+      challenge: "{{ acme_challenge_type }}"
+      csr: "{{ letsencrypt_csrs_dir }}/{{ fqdn }}.csr"
+      dest: "{{ letsencrypt_certs_dir }}/{{ fqdn }}.crt"
+      chain_dest: "{{ letsencrypt_certs_dir }}/chain_{{ fqdn }}.crt"
+      fullchain_dest: "{{ letsencrypt_certs_dir }}/fullchain_{{ fqdn }}"
+      data: "{{ acme_challenge_your_domain }}"
+
+
+  - name: Delete DNS record for dns-01 challenge (CloudFlare)
+    community.general.cloudflare_dns:
+      zone: "{{ domain_name }}"
+      record: "{{ acme_challenge_your_domain['challenge_data'][fqdn][acme_challenge_type]['record'] }}"
+      type: TXT
+      ttl: 60
+      value: "{{ acme_challenge_your_domain['challenge_data'][fqdn][acme_challenge_type]['resource_value'] }}"
+      account_email: "{{ cf_email }}"
+      account_api_key: "{{ cf_api_key }}"
+      api_token: "{{ cf_api_token }}"
+      state: absent
+    register: record
+    when: dns_provider == "CF"

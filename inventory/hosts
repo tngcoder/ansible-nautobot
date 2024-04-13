@@ -1,0 +1,15 @@
+[updates]
+nautobot-02
+
+[letsencrypt_cf]
+nautobot-02
+
+[letsencrypt_az]
+nautobot-99
+
+[letsencrypt:children]
+letsencrypt_cf
+letsencrypt_az
+
+[nautobot]
+nautobot-02

@@ -1,0 +1,285 @@
+---
+- hosts: nautobot
+  become: true
+  become_user: root
+  tasks:
+    
+    - name: Update apt repo and cache on all Debian/Ubuntu boxes
+      apt: update_cache=yes force_apt_get=yes cache_valid_time=3600
+
+    - name: Install .
+      apt: 
+        name:
+          - ca-certificates
+          - curl
+          - gnupg
+        state: present
+
+
+    - name: add the NodeSource apt repositoty key 
+      apt_key:
+        url: https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key
+        keyring: /etc/apt/keyrings/nodesource.gpg
+
+    - name: Add NodeSource Repository 
+      apt_repository:
+        repo: 'deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_18.x nodistro main'
+        filename: nodesource
+        state: present
+    
+    - name: Update apt repo and cache on all Debian/Ubuntu boxes
+      apt: update_cache=yes force_apt_get=yes cache_valid_time=3600
+
+    - name: Installing nautobot prerequisite Packages.
+      apt: 
+        name:
+          - git 
+          - python3 
+          - python3-pip 
+          - python3-venv 
+          - python3-dev 
+          - redis-server 
+          - nodejs
+          - acl
+          - expect
+        state: present
+
+    - name: Installing PostgreSQL
+      apt: 
+        name: postgresql
+        state: present
+    
+    - name: Enable service PostgreSQL, and enable persistently
+      service: 
+        name: postgresql
+        enabled: yes
+
+    - name: Install psycopg2 Python package
+      pip:
+        name: psycopg2-binary
+        state: present
+      
+    - name: Create nautobot PostgreSQL Database
+      postgresql_db:
+        state: present
+        name: "{{ nautobot_db_name }}"
+      become: yes
+      become_user: postgres
+
+    - name: Create nautobot PostgreSQL Database user
+      postgresql_user:
+        state: present
+        name: "{{ nautobot_db_user }}"
+        password: "{{ nautobot_db_pass }}"
+      become: yes
+      become_user: postgres
+
+    - name: Grant nautobot PostgreSQL Database user to nautobot PostgreSQL Database
+      postgresql_privs:
+        type: database
+        database: "{{ nautobot_db_name }}"
+        roles: "{{ nautobot_db_user }}"
+        grant_option: no
+        privs: all
+      become: yes
+      become_user: postgres
+
+    - name: create nautobot user 
+      user:
+        name: "{{ nautobot_user }}"
+        shell: /bin/bash
+        create_home: true
+        home: "{{ nautobot_user_home }}"
+        # system: true
+        state: present
+
+    - name: Create the Virtual Environment
+      command: python3 -m venv "{{ nautobot_user_home }}"
+      become: yes
+      become_user: "{{ nautobot_user }}"
+      become_flags: "-i"
+
+    - name: Update the Nautobot .bashrc
+      lineinfile: 
+        path: /opt/nautobot/.bashrc
+        regexp: '^(.*)export NAUTOBOT_ROOT'
+        line: 'export NAUTOBOT_ROOT="{{ nautobot_user_home }}"'
+      become: yes
+      become_user: "{{ nautobot_user }}"
+      become_flags: "-i"
+
+    - name: Install wheel into the virtualenv of nautobot
+      pip:
+        name: wheel
+        virtualenv: "{{ nautobot_user_home }}"
+      become: yes
+      become_user: "{{ nautobot_user }}"
+      become_flags: "-i"
+
+    - name: Install nautobot into the virtualenv of nautobot
+      pip:
+        name: nautobot
+        virtualenv: "{{ nautobot_user_home }}"
+      become: yes
+      become_user: "{{ nautobot_user }}"
+      become_flags: "-i"
+
+
+    - name: init nautobot-server
+      command: "{{ nautobot_user_home }}/bin/nautobot-server init {{ nautobot_user_home }} --disable-installation-metrics"
+      become: yes
+      become_user: "{{ nautobot_user }}"
+      become_flags: "-i"
+
+    - name: create nautobot config file
+      template: 
+        src: nautobot.conf.j2
+        dest: "{{ nautobot_user_home }}/{{ nautobot_config_file }}"
+      become: yes
+      become_user: "{{ nautobot_user }}"
+      become_flags: "-i"
+
+    - name: create local_requirements.txt
+      template: 
+        src: nautobot_local_requirements.j2
+        dest: "{{ nautobot_user_home }}/local_requirements.txt"
+      become: yes
+      become_user: "{{ nautobot_user }}"
+      become_flags: "-i"
+
+    - name: Install local_requirements.txt
+      pip:
+        requirements: "{{ nautobot_user_home }}/local_requirements.txt"
+        virtualenv: "{{ nautobot_user_home }}"
+      become: yes
+      become_user: "{{ nautobot_user }}"
+      become_flags: "-i"
+
+    - name: Prepare the Database
+      networktocode.nautobot.nautobot_server:
+        command: "migrate"
+        db_username: "{{ nautobot_db_user }}"
+        db_password: "{{ nautobot_db_pass }}"
+        project_path: "{{ nautobot_user_home }}"
+      become: yes
+      become_user: "{{ nautobot_user }}"
+      become_flags: "-i"
+
+    - name: Create Superuser
+      networktocode.nautobot.nautobot_server:
+        command: "createsuperuser"
+        args:
+          email: "{{ nautobot_admin_email }}"
+          username: "{{ nautobot_admin_user }}"
+        db_username: "{{ nautobot_db_user }}"
+        db_password: "{{ nautobot_db_pass }}"
+        project_path: "{{ nautobot_user_home }}"
+      become: yes
+      become_user: "{{ nautobot_user }}"
+      become_flags: "-i"
+
+    - name: Install pexpect into the virtualenv of nautobot
+      pip:
+        name: pexpect
+        virtualenv: "{{ nautobot_user_home }}"
+      become: yes
+      become_user: "{{ nautobot_user }}"
+      become_flags: "-i"
+
+    - name: Set password for Superuser
+      shell: |
+        set timeout 60
+        spawn {{ nautobot_user_home }}/bin/nautobot-server --config={{ nautobot_user_home }}/{{ nautobot_config_file }} changepassword {{ nautobot_admin_user }}
+        expect "Password: "
+        send {{ nautobot_admin_pass }}\r
+        expect "Password (again): "
+        send {{ nautobot_admin_pass }}\r
+        expect eof
+      args:
+        executable: /usr/bin/expect
+      become: yes
+      become_user: "{{ nautobot_user }}"
+      become_flags: "-i"
+
+    
+
+#    - name: Set password for Superuser
+#      expect:
+#        command: "{{ nautobot_user_home }}/bin/nautobot-server --config={{ nautobot_user_home }}/{{ nautobot_config_file }} changepassword {{ nautobot_admin_user }}"
+#        responses:
+#          question:
+#            - Password : "{{ nautobot_admin_pass }}"
+#            - Password (again) : "{{ nautobot_admin_pass }}"
+#      become: yes
+#      become_user: "{{ nautobot_user }}"
+#      become_flags: "-i"
+
+    - name: Run collectstatic
+      networktocode.nautobot.nautobot_server:
+        command: "collectstatic"
+        db_username: "{{ nautobot_db_user }}"
+        db_password: "{{ nautobot_db_pass }}"
+        project_path: "{{ nautobot_user_home }}"
+      become: yes
+      become_user: "{{ nautobot_user }}"
+      become_flags: "-i"
+
+    - name: create uwsgi config file
+      template: 
+        src: nautobot_uwsgi.j2
+        dest: "{{ nautobot_user_home }}/{{ uwsgi['file_name'] }}"
+      become: yes
+      become_user: "{{ nautobot_user }}"
+      become_flags: "-i"
+
+    - name: create systemd for nautobot service
+      template: 
+        src: nautobot.service.j2
+        dest: "{{ nautobot_service_file }}"
+
+    - name: create systemd for nautobot-worker service
+      template: 
+        src: nautobot-worker.service.j2
+        dest: "{{ nautobot_worker_service_file }}"
+
+    - name: create systemd for nautobot-scheduler service
+      template: 
+        src: nautobot-scheduler.service.j2
+        dest: "{{ nautobot_scheduler_service_file }}"
+
+    - name: systemctl daemon reload
+      command: "systemctl daemon-reload"
+    
+    - name: enable nautobot nautobot-worker nautobot-scheduler services
+      command: "systemctl enable --now nautobot nautobot-worker nautobot-scheduler"
+
+    - name: Install nginx
+      apt: 
+        name:
+          - nginx
+        state: present
+
+    - name: Create nautobot conf file for Nginx
+      template: 
+        src: nautobot_nginx.j2
+        dest: "{{ nginx_sites_available_folder }}/{{ nautobot_nginx_config }}"
+
+    - name: Remove the config of the default website
+      file:
+        path: "{{ nginx_sites_enabled_folder }}/default"
+        state: absent
+
+    - name: Deploy nautobot conf file for Nginx in sites-enabled folder
+      file:
+        src: "{{ nginx_sites_available_folder }}/{{ nautobot_nginx_config }}"
+        dest: "{{ nginx_sites_enabled_folder }}/{{ nautobot_nginx_config }}"
+        state: link
+
+    - name: Restart Ngnix 
+      command: "systemctl restart nginx"
+    
+    - name:  Permissions for nautobot_user_home 
+      file:
+        path: "{{ nautobot_user_home }}"
+        state: directory
+        mode: '0755'

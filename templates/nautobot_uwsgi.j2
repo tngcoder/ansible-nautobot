@@ -1,0 +1,35 @@
+[uwsgi]
+; The IP address (typically localhost) and port that the WSGI process should listen on
+socket = {{uwsgi['socket']}}
+
+; Fail to start if any parameter in the configuration file isn’t explicitly understood by uWSGI
+strict = {{uwsgi['strict']}}
+
+; Enable master process to gracefully re-spawn and pre-fork workers
+master = {{uwsgi['master']}}
+
+; Allow Python app-generated threads to run
+enable-threads = {{uwsgi['enable-threads']}}
+
+;Try to remove all of the generated file/sockets during shutdown
+vacuum = {{uwsgi['vacuum']}}
+
+; Do not use multiple interpreters, allowing only Nautobot to run
+single-interpreter = {{uwsgi['single-interpreter']}}
+
+; Shutdown when receiving SIGTERM (default is respawn)
+die-on-term = {{uwsgi['die-on-term']}}
+
+; Prevents uWSGI from starting if it is unable load Nautobot (usually due to errors)
+need-app = {{uwsgi['need-app']}}
+
+; By default, uWSGI has rather verbose logging that can be noisy
+disable-logging = {{uwsgi['disable-logging']}}
+
+; Assert that critical 4xx and 5xx errors are still logged
+log-4xx = {{uwsgi['log-4xx']}}
+log-5xx = {{uwsgi['log-5xx']}}
+
+; Enable HTTP 1.1 keepalive support
+http-keepalive = {{uwsgi['log-5xx']}}
+

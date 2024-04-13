@@ -1,0 +1,56 @@
+---
+ansible_host: nautobot-02.somewhere.nowhere
+fqdn: nautobot-02.somewhere.nowhere
+nautobot_user: nautobot
+nautobot_user_home: '/opt/nautobot'
+nautobot_db_user: nautobot
+nautobot_db_pass: password1
+nautobot_db_name: nautobot
+nautobot_db_server: localhost
+nautobot_admin_user: nautobot_admin
+nautobot_admin_pass: nautobot_pass
+nautobot_admin_email: someone@somewhere.nowhere
+nautobot_config_file: nautobot_config.py
+local_requirements:
+  - "nautobot[napalm]"
+  - "nautobot-chatops"
+  - "nautobot-data-validation-engine"
+  - "nautobot-device-lifecycle-mgmt"
+  - "nautobot-device-onboarding"
+  - "nautobot-firewall-models"
+  - "nautobot-plugin-nornir"
+  - "nautobot-golden-config"
+  - "nautobot-ssot"
+
+plugins: 
+  - "nautobot_chatops"
+  - "nautobot_data_validation_engine"
+  - "nautobot_device_lifecycle_mgmt"
+  - "nautobot_device_onboarding"
+  - "nautobot_firewall_models"
+  - "nautobot_plugin_nornir"
+  - "nautobot_golden_config"
+  - "nautobot_ssot"
+
+uwsgi:
+  file_name: "uwsgi.ini"
+  socket: "127.0.0.1:8001"
+  strict: true
+  master: true
+  enable-threads: true
+  vacuum: true
+  single-interpreter: true
+  die-on-term: true
+  need-app: true
+  disable-logging: true
+  log-4xx: true
+  log-5xx: true
+  http-keepalive: 1
+  processes: 5
+
+nautobot_service_file: "/etc/systemd/system/nautobot.service"
+nautobot_worker_service_file: "/etc/systemd/system/nautobot-worker.service"
+nautobot_scheduler_service_file: "/etc/systemd/system/nautobot-scheduler.service"
+nginx_sites_available_folder: "/etc/nginx/sites-available"
+nginx_sites_enabled_folder: "/etc/nginx/sites-enabled"
+nautobot_nginx_config: "nautobot.conf"

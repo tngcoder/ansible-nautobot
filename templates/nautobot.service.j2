@@ -1,0 +1,25 @@
+[Unit]
+Description=Nautobot WSGI Service
+Documentation=https://docs.nautobot.com/projects/core/en/stable/
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+Environment="NAUTOBOT_ROOT={{nautobot_user_home}}"
+
+User={{nautobot_user}}
+Group={{nautobot_user}}
+PIDFile=/var/tmp/nautobot.pid
+WorkingDirectory={{nautobot_user_home}}
+
+ExecStart={{nautobot_user_home}}/bin/nautobot-server start --pidfile /var/tmp/nautobot.pid --ini {{nautobot_user_home}}/{{uwsgi['file_name']}}
+ExecStop={{nautobot_user_home}}/bin/nautobot-server start --stop /var/tmp/nautobot.pid
+ExecReload={{nautobot_user_home}}/bin/nautobot-server start --reload /var/tmp/nautobot.pid
+
+Restart=on-failure
+RestartSec=30
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
